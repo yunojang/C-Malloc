@@ -63,6 +63,9 @@ typedef size_t word_t;
 #define NEXT_BLKP(bp) ((char *)bp + GET_SIZE(HDRP(bp)))
 #define PREV_BLKP(bp) ((char *)bp - GET_SIZE(HDRP(bp) - WSIZE))
 
+static void *extend_heap(size_t words);
+static void *coalesce(void *bp);
+
 /*
  * mm_init - initialize the malloc package.
  */
@@ -81,8 +84,8 @@ int mm_init(void)
     PUT(heap_p, 0);
 
     // pr block
-    PUT(heap_p + (1 * WSIZE), PACK(WSIZE, 1));
-    PUT(heap_p + (2 * WSIZE), PACK(WSIZE, 1));
+    PUT(heap_p + (1 * WSIZE), PACK(WSIZE * 2, 1));
+    PUT(heap_p + (2 * WSIZE), PACK(WSIZE * 2, 1));
 
     // ep block
     PUT(heap_p + (3 * WSIZE), PACK(0, 1));
@@ -98,42 +101,92 @@ int mm_init(void)
     return 0;
 }
 
+static void *two_coalesce(void *start, void *end)
+{
+    size_t size = GET_SIZE(HDRP(start)) + GET_SIZE(HDRP(end));
+    PUT(HDRP(start), PACK(size, 0));
+    PUT(FTRP(end), PACK(size, 0));
+    return start;
+}
+
+// static void *next_coalesce(void *bp)
+// {
+//     void *next = NEXT_BLKP(bp);
+//     if (GET_ALLOC(HDRP(next)))
+//     {
+//         return bp;
+//     }
+//     return two_coalesce(bp, next);
+// }
+
+static void *coalesce(void *bp)
+{
+    void *prev = PREV_BLKP(bp);
+    void *next = NEXT_BLKP(bp);
+    size_t prev_alloc = GET_ALLOC(HDRP(prev));
+    size_t next_alloc = GET_ALLOC(HDRP(next));
+
+    if (prev_alloc && next_alloc)
+    {
+        return bp;
+    }
+
+    if (!prev_alloc && !next_alloc)
+    {
+        bp = two_coalesce(prev, bp);
+        return two_coalesce(bp, next);
+    }
+    if (!prev_alloc)
+    {
+        return two_coalesce(prev, bp);
+    }
+    if (!next_alloc)
+    {
+        return two_coalesce(bp, next);
+    }
+    return bp;
+}
+
 static void *extend_heap(size_t words)
 {
     char *bp;
     size_t size;
 
     size = (words % 2) ? ((words + 1) * WSIZE) : (words * WSIZE);
-    if ((bp = mem_sbrk(size)) == -1)
+    if ((bp = mem_sbrk(size)) == (void *)-1)
     {
         return NULL;
     }
 
     // put header, footer
-    int header = PACK(size, 0);
-    PUT(HDRP(bp), header);
-    PUT(FTRP(bp), header);
+    PUT(HDRP(bp), PACK(size, 0));
+    PUT(FTRP(bp), PACK(size, 0));
     // new ep block
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));
 
-    return;
+    return coalesce(bp);
 }
 
 /*
  * mm_malloc - Allocate a block by incrementing the brk pointer.
  *     Always allocate a block whose size is a multiple of the alignment.
  */
+
+static void *find_fit(size_t size)
+{
+}
+
 void *mm_malloc(size_t size)
 {
-    int newsize = ALIGN(size + SIZE_T_SIZE);
-    void *p = mem_sbrk(newsize);
-    if (p == (void *)-1)
-        return NULL;
-    else
+    if (size <= 0)
     {
-        *(size_t *)p = size;
-        return (void *)((char *)p + SIZE_T_SIZE);
+        return NULL;
     }
+    char *bp;
+
+    int new_size = ALIGN(size + SIZE_T_SIZE);
+
+    return bp;
 }
 
 /*
@@ -141,6 +194,10 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
+    size_t size = GET_SIZE(HDRP(ptr));
+    PUT(HDRP(ptr), PACK(size, 0));
+    PUT(FTRP(ptr), PACK(size, 0));
+    coalesce(ptr);
 }
 
 /*

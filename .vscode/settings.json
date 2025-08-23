@@ -1,5 +1,12 @@
 {
     "files.associations": {
-        "memlib.h": "c"
+        "memlib.h": "c",
+        "assert.h": "c",
+        "stdio.h": "c",
+        "stdlib.h": "c",
+        "unistd.h": "c",
+        "string.h": "c",
+        "mm.h": "c",
+        "cstdlib": "c"
     }
 }
