@@ -75,7 +75,9 @@ static void *coalesce(void *bp);
  * mm_init - initialize the malloc package.
  */
 //
-char *heap_p;
+static char *heap_p;
+static void *rover;
+
 int mm_init(void)
 {
     heap_p = mem_sbrk(4 * WSIZE);
@@ -134,39 +136,9 @@ static void *prev_coalesce(void *bp)
 
 static void *coalesce(void *bp)
 {
-    // void *prev = PREV_BLKP(bp);
-    // void *next = NEXT_BLKP(bp);
-    // size_t prev_alloc = GET_ALLOC(HDRP(prev));
-    // size_t next_alloc = GET_ALLOC(HDRP(next));
-
-    // if (prev_alloc && next_alloc)
-    // {
-    //     return bp;
-    // }
-
-    // if (!prev_alloc && !next_alloc)
-    // {
-    //     bp = two_coalesce(prev, bp);
-    //     return two_coalesce(bp, next);
-    // }
-    // if (!prev_alloc)
-    // {
-    //     return two_coalesce(prev, bp);
-    // }
-    // if (!next_alloc)
-    // {
-    //     return two_coalesce(bp, next);
-    // }
-
-    // if (GET(HDRP(bp)) != GET(FTRP(bp)))
-    // {
-    //     fprintf(stderr, "coalesce H/F mismatch\n");
-    //     abort();
-    // }
-
-    // return bp;
-    void *p = prev_coalesce(bp);
-    return next_coalesce(p);
+    void *new_bp = next_coalesce(prev_coalesce(bp));
+    rover = new_bp;
+    return new_bp;
 }
 
 static void *extend_heap(size_t words)
@@ -196,23 +168,12 @@ static void *extend_heap(size_t words)
  */
 
 // first-fit (implicit_free_list)
-static void *find_fit(size_t size)
+static void *find_start_to_end(size_t size, void *start, void *end)
 {
-    char *bp = NEXT_BLKP(heap_p);
+    char *bp = start;
     size_t cur_size;
-    while ((cur_size = GET_SIZE(HDRP(bp))) != 0)
+    while ((cur_size = GET_SIZE(HDRP(bp))) > 0 && bp != end)
     {
-        if ((GET_SIZE(HDRP(bp)) & 0x7) || GET_SIZE(HDRP(bp)) < 2 * WSIZE)
-        {
-            fprintf(stderr, "scan bad size=%#x at %p\n", GET(HDRP(bp)), bp);
-            abort();
-        }
-        if (GET(HDRP(bp)) != GET(FTRP(bp)))
-        {
-            fprintf(stderr, "scan H/F mismatch at %p\n", bp);
-            abort();
-        }
-
         if (!GET_ALLOC(HDRP(bp)) && cur_size >= size)
         {
             return bp;
@@ -221,6 +182,32 @@ static void *find_fit(size_t size)
     }
 
     return NULL;
+}
+
+static find_firstfit(size_t size)
+{
+    return find_from_start(size, NEXT_BLKP(heap_p), NULL);
+}
+
+static void *find_nextfit(size_t size)
+{
+    if (rover == NULL)
+    {
+        rover = heap_p;
+    }
+
+    void *found = find_start_to_end(size, rover, NULL);
+    if (found == NULL)
+    {
+        found = find_start_to_end(size, NEXT_BLKP(heap_p), rover);
+    }
+    return found;
+}
+
+static void *find_fit(size_t size)
+{
+    // return find_firstfit(size);
+    return find_nextfit(size);
 }
 
 static void *place(void *bp, size_t size)
@@ -235,28 +222,13 @@ static void *place(void *bp, size_t size)
         void *rp = NEXT_BLKP(bp);
         PUT(HDRP(rp), PACK(remain, 0));
         PUT(FTRP(rp), PACK(remain, 0));
+        rover = rp;
     }
     else
     {
         PUT(HDRP(bp), PACK(csize, 1));
         PUT(FTRP(bp), PACK(csize, 1));
     }
-
-    // if (GET_SIZE(HDRP(bp)) != GET_SIZE(FTRP(bp)))
-    // {
-    //     fprintf(stderr, "place A H/F mismatch\n");
-    //     abort();
-    // }
-    // if (csize - size >= 2 * DSIZE)
-    // {
-    //     void *rp_chk = NEXT_BLKP(bp);
-    //     if (GET(HDRP(rp_chk)) != GET(FTRP(rp_chk)))
-    //     {
-    //         fprintf(stderr, "place B remainder H/F mismatch\n");
-    //         abort();
-    //     }
-    // }
-
     return bp;
 }
 
@@ -266,7 +238,7 @@ void *mm_malloc(size_t size)
     {
         return NULL;
     }
-    char *bp;
+    void *bp;
     // header, footer 영역 추가 + 정렬
     size_t asize = ALIGN(size + (2 * WSIZE));
     if ((bp = find_fit(asize)) == NULL)
@@ -311,15 +283,12 @@ void *mm_realloc(void *ptr, size_t size)
 
     // 확보하려는 사이즈
     size_t asize = ALIGN(size + (2 * WSIZE));
-    // size_t oldp = GET_SIZE(HDRP(ptr)) - (2 * WSIZE);
-    size_t oldp = GET_PAYLOAD(ptr);
-
-    // 다음 가용 블록과 병합 후 inplace 여부 확인
     void *next = NEXT_BLKP(ptr);
-    size_t olds = GET_SIZE(HDRP(ptr));
+    size_t oldp = GET_PAYLOAD(ptr);
+    size_t old_size = GET_SIZE(HDRP(ptr));
     if (!GET_ALLOC(HDRP(next)))
     {
-        size_t coalesce_size = olds + GET_SIZE(HDRP(NEXT_BLKP(ptr)));
+        size_t coalesce_size = old_size + GET_SIZE(HDRP(next));
         if (coalesce_size >= asize)
         {
             next_coalesce(ptr);
@@ -328,7 +297,7 @@ void *mm_realloc(void *ptr, size_t size)
     }
     else
     {
-        if (olds >= asize)
+        if (old_size >= asize)
         {
             return place(ptr, asize);
         }
