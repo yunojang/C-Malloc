@@ -185,9 +185,9 @@ static void *find_start_to_end(size_t size, void *start, void *end)
     return NULL;
 }
 
-static find_firstfit(size_t size)
+static void *find_firstfit(size_t size)
 {
-    return find_from_start(size, NEXT_BLKP(heap_p), NULL);
+    return find_start_to_end(size, NEXT_BLKP(heap_p), NULL);
 }
 
 static void *find_nextfit(size_t size)
@@ -228,8 +228,8 @@ static void *find_bestfit(size_t size)
 static void *find_fit(size_t size)
 {
     // return find_firstfit(size);
-    // return find_nextfit(size);
-    return find_bestfit(size);
+    return find_nextfit(size);
+    // return find_bestfit(size);
 }
 
 static void *place(void *bp, size_t size)
