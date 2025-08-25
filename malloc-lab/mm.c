@@ -14,6 +14,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
+#include <math.h>
 
 #include "mm.h"
 #include "memlib.h"
@@ -204,10 +205,31 @@ static void *find_nextfit(size_t size)
     return found;
 }
 
+static void *find_bestfit(size_t size)
+{
+    char *bp = NEXT_BLKP(heap_p);
+    size_t cur_size;
+
+    char *min_p = NULL;
+    size_t min_size = INFINITY;
+    while ((cur_size = GET_SIZE(HDRP(bp))) > 0)
+    {
+        if (!GET_ALLOC(HDRP(bp)) && cur_size >= size && cur_size < min_size)
+        {
+            min_p = bp;
+            min_size = cur_size;
+        }
+        bp = NEXT_BLKP(bp);
+    }
+
+    return min_p;
+}
+
 static void *find_fit(size_t size)
 {
     // return find_firstfit(size);
-    return find_nextfit(size);
+    // return find_nextfit(size);
+    return find_bestfit(size);
 }
 
 static void *place(void *bp, size_t size)
