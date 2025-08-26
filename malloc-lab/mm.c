@@ -303,26 +303,39 @@ void *mm_realloc(void *ptr, size_t size)
         return NULL;
     }
 
-    // 확보하려는 사이즈
-    size_t asize = ALIGN(size + (2 * WSIZE));
+    size_t asize = ALIGN(size + (2 * WSIZE)); // 확보하려는 사이즈
     void *next = NEXT_BLKP(ptr);
-    size_t oldp = GET_PAYLOAD(ptr);
+    void *prev = PREV_BLKP(ptr);
     size_t old_size = GET_SIZE(HDRP(ptr));
-    if (!GET_ALLOC(HDRP(next)))
+    size_t coalesce_next_size = old_size + GET_SIZE(HDRP(next));
+    size_t coalesce_prev_size = old_size + GET_SIZE(HDRP(prev));
+    size_t oldp = GET_PAYLOAD(ptr);
+
+    if (old_size >= asize)
     {
-        size_t coalesce_size = old_size + GET_SIZE(HDRP(next));
-        if (coalesce_size >= asize)
-        {
-            next_coalesce(ptr);
-            return place(ptr, asize);
-        }
+        return place(ptr, asize);
     }
-    else
+
+    if (!GET_ALLOC(HDRP(next)) && coalesce_next_size >= asize)
     {
-        if (old_size >= asize)
-        {
-            return place(ptr, asize);
-        }
+        next_coalesce(ptr);
+        return place(ptr, asize);
+    }
+
+    if (!GET_ALLOC(HDRP(prev)) && coalesce_prev_size >= asize)
+    {
+        void *prev_ptr = prev_coalesce(ptr);
+        memmove(prev_ptr, ptr, oldp);
+        return place(prev_ptr, asize);
+    }
+
+    size_t coalesce_size = coalesce_next_size + coalesce_prev_size - old_size;
+    if (!GET_ALLOC(HDRP(prev)) && !GET_ALLOC(HDRP(next)) && coalesce_size >= asize)
+    {
+        next_coalesce(ptr);
+        void *prev_ptr = prev_coalesce(ptr);
+        memmove(prev_ptr, ptr, oldp);
+        return place(prev_ptr, asize);
     }
 
     // inplace 불가
